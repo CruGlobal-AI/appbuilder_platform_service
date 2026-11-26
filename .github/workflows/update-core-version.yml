@@ -9,7 +9,7 @@ permissions:
 jobs:
   call-update-sub:
     name: Update
-    uses: CruGlobal/.github/.github/workflows/update-sub-repo.yml@main
+    uses: CruGlobal-AI/ab-workflows/.github/workflows/update-sub-repo.yml@main
     secrets: 
       TOKEN:  ${{ secrets.GITHUB_TOKEN }}
     with:
@@ -26,7 +26,7 @@ jobs:
 
   call-generate-build-meta:
     name: Meta
-    uses: CruGlobal/.github/.github/workflows/generate-build-meta.yml@main
+    uses: CruGlobal-AI/ab-workflows/.github/workflows/generate-build-meta.yml@main
     with: 
       version: ${{ github.event.client_payload.version }}
       identifier: c
@@ -35,7 +35,7 @@ jobs:
     name: Version
     if: ${{ github.event.client_payload.type == 'minor' || github.event.client_payload.type == 'patch' }}
     needs: [ call-update-sub, call-run-cy-test, call-generate-build-meta ]
-    uses: CruGlobal/.github/.github/workflows/bump-version.yml@main
+    uses: CruGlobal-AI/ab-workflows/.github/workflows/bump-version.yml@main
     with:
       ref: ${{ needs.call-update-sub.outputs.branch }}
       # Consider core version updates as patch
@@ -45,7 +45,7 @@ jobs:
   call-merge-release:
     name: Merge
     needs: [ call-update-sub, call-bump-version ]
-    uses: CruGlobal/.github/.github/workflows/branch-merge-release.yml@main
+    uses: CruGlobal-AI/ab-workflows/.github/workflows/branch-merge-release.yml@main
     with: 
       branch: ${{ needs.call-update-sub.outputs.branch }}
       tag: v${{ needs.call-bump-version.outputs.new_version }}
@@ -53,21 +53,21 @@ jobs:
 
   call-dispatch-update-services:
     needs: [ call-bump-version, call-merge-release ]
-    uses: CruGlobal/.github/.github/workflows/dispatch-update.yml@main
+    uses: CruGlobal-AI/ab-workflows/.github/workflows/dispatch-update.yml@main
     with:
       dispatch_repos: '["ab_service_appbuilder","ab_service_custom_reports","ab_service_definition_manager","ab_service_file_processor","ab_service_process_manager","ab_service_user_manager"]'
       dispatch_type: platform_new_version
       version: ${{ needs.call-bump-version.outputs.new_version }}
       type: patch
-      app_id: ${{ vars.GS_DEV_APP_ID }}
+      app_id: ${{ vars.DS_GH_APP_ID }}
     secrets:
-      app_secret: ${{ secrets.GS_DEV_APP_PK }}
+      app_secret: ${{ secrets.DS_GH_APP_PK }}
 
   call-open-pr-fail:
     name: Tests Failed
     needs: [ call-update-sub, call-run-cy-test ]
     if: ${{ failure() && github.event.client_payload.type != 'major' }}
-    uses: CruGlobal/.github/.github/workflows/open-pr.yml@main
+    uses: CruGlobal-AI/ab-workflows/.github/workflows/open-pr.yml@main
     with: 
       branch: ${{ needs.call-update-sub.outputs.branch }}
       title: Update core to ${{ github.event.client_payload.version }} (from GitHub Actions Workflow)
@@ -78,7 +78,7 @@ jobs:
     name: Major Change
     needs: [ call-update-sub ]
     if: ${{ github.event.client_payload.type == 'major' }}
-    uses: CruGlobal/.github/.github/workflows/open-pr.yml@main
+    uses: CruGlobal-AI/ab-workflows/.github/workflows/open-pr.yml@main
     with: 
       branch: ${{ needs.call-update-sub.outputs.branch }}
       title: Update core to ${{ github.event.client_payload.version }} (from GitHub Actions Workflow)
