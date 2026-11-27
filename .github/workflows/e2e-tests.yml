@@ -9,97 +9,119 @@ jobs:
    e2e-tests:
       name: E2E Tests
       runs-on: ubuntu-latest
+      timeout-minutes: 30
+      concurrency:
+         group: e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+         cancel-in-progress: true
       env:
          CYPRESS_RESPONSE_TIMEOUT: 200000
          CYPRESS_DEFAULT_COMMAND_TIMEOUT: 30000
          CYPRESS_RETRIES: 2
       steps:
+         # Runs first so image pulls overlap with checkout / npm i / webpack / DB init.
+         - name: Pre-pull images
+           id: prepull
+           uses: CruGlobal-AI/ab-workflows/.github/actions/prepull-images@prepull-action
+
          # Checkout each service that uses appbuilder_platform_service then appbuilder inside it
          # ab_service_appbuilder
          - name: Checkout ab_service_appbuilder
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_appbuilder
               repository: ${{ github.repository_owner }}/ab_service_appbuilder
          - name: Checkout ab_service_appbuilder > AppBuilder
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_appbuilder/AppBuilder
               submodules: true
               ref: ${{ inputs.ref }}
          # ab_service_custom_reports
          - name: Checkout ab_service_custom_reports
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_custom_reports
               repository: ${{ github.repository_owner }}/ab_service_custom_reports
          - name: Checkout ab_service_custom_reports > AppBuilder
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_custom_reports/AppBuilder
               submodules: true
               ref: ${{ inputs.ref }}
          # ab_service_definition_manager
          - name: Checkout ab_service_definition_manager
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_definition_manager
               repository: ${{ github.repository_owner }}/ab_service_definition_manager
          - name: Checkout ab_service_definition_manager > AppBuilder
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_definition_manager/AppBuilder
               submodules: true
               ref: ${{ inputs.ref }}
          # ab_service_file_processor
          - name: Checkout ab_service_file_processor
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_file_processor
               repository: ${{ github.repository_owner }}/ab_service_file_processor
          - name: Checkout ab_service_file_processor > AppBuilder
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_file_processor/AppBuilder
               submodules: true
               ref: ${{ inputs.ref }}
          # ab_service_process_manager
          - name: Checkout ab_service_process_manager
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_process_manager
               repository: ${{ github.repository_owner }}/ab_service_process_manager
          - name: Checkout ab_service_process_manager > AppBuilder
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_process_manager/AppBuilder
               submodules: true
               ref: ${{ inputs.ref }}
          # ab_service_user_manager
          - name: Checkout ab_service_user_manager
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_user_manager
               repository: ${{ github.repository_owner }}/ab_service_user_manager
          - name: Checkout ab_service_user_manager > AppBuilder
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_service_user_manager/AppBuilder
               submodules: true
               ref: ${{ inputs.ref }}
          # Checkout ab_platform_web and build new app.js
          - name: Checkout ab_platform_web
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: ab_platform_web
               submodules: true
               repository: ${{ github.repository_owner }}/ab_platform_web
          - name: Checkout ab_service_web
-           uses: actions/checkout@v3
+           uses: actions/checkout@v7
            with:
               path: web
               repository: ${{ github.repository_owner }}/ab_service_web
-         - run: npm i
+         - name: Restore dependency cache
+           id: deps-cache
+           uses: actions/cache/restore@v6
+           with:
+              path: |
+                 ~/.npm
+                 ~/.cache/Cypress
+                 ab_platform_web/node_modules/.cache
+              key: ab-e2e-core-${{ runner.os }}-${{ steps.prepull.outputs.runtime_lock }}-${{ hashFiles('ab_platform_web/package-lock.json') }}
+              restore-keys: |
+                 ab-e2e-core-${{ runner.os }}-${{ steps.prepull.outputs.runtime_lock }}-
+                 ab-e2e-core-${{ runner.os }}-
+
+         - run: npm i --prefer-offline --no-audit --no-fund
            working-directory: ./ab_platform_web
          - name: Webpack
            run: npm run build:update
@@ -109,33 +131,37 @@ jobs:
          # install and test
          - name: Install AppBuilder
            uses: CruGlobal-AI/ab-install-action@v1
+
+         # Save right after install so a failing test run still fills the cache.
+         - name: Save dependency cache
+           if: steps.deps-cache.outputs.cache-hit != 'true'
+           uses: actions/cache/save@v6
+           with:
+              path: |
+                 ~/.npm
+                 ~/.cache/Cypress
+                 ab_platform_web/node_modules/.cache
+              key: ${{ steps.deps-cache.outputs.cache-primary-key }}
          - name: Check out kitchen-sink tests
-           uses: actions/checkout@v2
+           uses: actions/checkout@v7
            with:
               repository: ${{ github.repository_owner }}/kitchensink_app
               path: AppBuilder/test/e2e/cypress/e2e/kitchensink_app
-         - run: npm install pm2@latest -g
+         - run: npm install pm2@latest -g --prefer-offline --no-audit --no-fund
          - name: Save Logs
            run: pm2 start ./logs.js -- --toFile logs/ABServices.log
            working-directory: ./AppBuilder
-         - name: Wait for AB
-           # Skipping the wait step. Cypress has a bit of wait time built in.
-           if: false
-           uses: ifaxity/wait-on-action@v1.1.0
-           with:
-              resource: http://localhost:80
-              timeout: 300000
          - name: Run Cypress Tests
            run: npm run test:e2e:app -- --browser chrome
            working-directory: ./AppBuilder
          - name: Save Screenshots
-           uses: actions/upload-artifact@v4
+           uses: actions/upload-artifact@v7
            if: failure()
            with:
               name: cypress-screenshots
               path: ./AppBuilder/test/e2e/cypress/screenshots
          - name: Save Service Logs
-           uses: actions/upload-artifact@v4
+           uses: actions/upload-artifact@v7
            if: failure()
            with:
               name: ABServices.log
