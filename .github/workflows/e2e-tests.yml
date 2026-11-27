@@ -21,7 +21,7 @@ jobs:
          # Runs first so image pulls overlap with checkout / npm i / webpack / DB init.
          - name: Pre-pull images
            id: prepull
-           uses: CruGlobal-AI/ab-workflows/.github/actions/prepull-images@prepull-action
+           uses: CruGlobal-AI/ab-workflows/.github/actions/prepull-images@main
 
          # Checkout each service that uses appbuilder_platform_service then appbuilder inside it
          # ab_service_appbuilder
